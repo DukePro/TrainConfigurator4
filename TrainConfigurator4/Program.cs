@@ -1,7 +1,4 @@
-﻿using System.Diagnostics;
-using System.Globalization;
-
-namespace TrainConfigurator
+﻿namespace TrainConfigurator
 {
     class Programm
     {
@@ -15,7 +12,6 @@ namespace TrainConfigurator
     class Menu
     {
         private Terminal _terminal = new Terminal();
-        private Depot _depot = new Depot();
 
         public void ShowMenu()
         {
@@ -56,15 +52,15 @@ namespace TrainConfigurator
                         break;
 
                     case MenuCompileTrain:
-                        _depot.CreateTrain();
+                        _terminal.CreateLocomotive();
                         break;
 
                     case MenuShowTrainParam:
-                        _terminal.ShowTrain();
+                        _terminal.ShowLocomotive();
                         break;
 
                     case MenuSendTrain:
-                        _terminal.SendTrain();
+                        _terminal.SendLocomotive();
                         break;
 
                     case MenuExit:
@@ -118,14 +114,16 @@ namespace TrainConfigurator
         }
     }
 
-    class Terminal //создаёт направление и пассажиров, продаёт билеты. И формирует поезд из вагонов, созданых в депо. (Добавить метод отправки поезда)
+    class Terminal
     {
         private Random _rand = new Random();
+        private Database _database = new Database();
         private Depot _depot = new Depot();
+        private Train _train = new Train();
 
         public string Direction { get; private set; } = "Не задано";
         public int Tickets { get; private set; } = 0;
-        public bool IsTrainFormed { get; private set; } = false;
+        public bool IsTrainFormed => _train.IsFormed;
 
         public void CreateDirection()
         {
@@ -174,15 +172,78 @@ namespace TrainConfigurator
             }
         }
 
-        public Train CreateTrain()
+        private Dictionary<WagonTypes, int> WagonsRequest()
         {
-            List<Wagon> wagons = _depot.CreateWagons();
+            Dictionary<WagonTypes, int> wagonsRequest = new Dictionary<WagonTypes, int>()
+                {
+                    { WagonTypes.TypeA, 0},
+                    { WagonTypes.TypeB, 0},
+                    { WagonTypes.TypeC, 0},
+                    { WagonTypes.TypeD, 0}
+                };
 
-            return new Train(wagons);
+            int wagonSizeD = _database.GetWagonSize(WagonTypes.TypeD); //54
+            int wagonSizeC = _database.GetWagonSize(WagonTypes.TypeC); //36
+            int wagonSizeB = _database.GetWagonSize(WagonTypes.TypeB); //18
+            int wagonSizeA = _database.GetWagonSize(WagonTypes.TypeA); //6
+            double tempTickets = Tickets;
+
+            if (tempTickets > 0)
+            {
+                if (tempTickets >= wagonSizeD)
+                {
+                    int CountWagonD = (int)Math.Floor(tempTickets / wagonSizeD);
+                    wagonsRequest[WagonTypes.TypeD] = CountWagonD;
+                    tempTickets -= CountWagonD * wagonSizeD;
+                }
+                if (tempTickets >= wagonSizeC)
+                {
+                    int CountWagonC = (int)Math.Floor(tempTickets / wagonSizeC);
+                    wagonsRequest[WagonTypes.TypeC] = CountWagonC;
+                    tempTickets -= CountWagonC * wagonSizeC;
+                }
+                if (tempTickets >= wagonSizeB)
+                {
+                    int CountWagonB = (int)Math.Floor(tempTickets / wagonSizeB);
+                    wagonsRequest[WagonTypes.TypeB] = CountWagonB;
+                    tempTickets -= CountWagonB * wagonSizeB;
+                }
+                if (tempTickets <= wagonSizeB - 1 && tempTickets > 0)
+                {
+                    int CountWagonA = (int)Math.Ceiling(tempTickets / wagonSizeA);
+                    wagonsRequest[WagonTypes.TypeA] = CountWagonA;
+                }
+            }
+            return wagonsRequest;
+        }
+
+        public void CreateLocomotive()
+        {
+            _train.AddWagons(_depot.CreateWagons(WagonsRequest()));
+        }
+
+        public void ShowLocomotive()
+        {
+            _train.ShowTrainInfo();
+        }
+
+        public void SendLocomotive()
+        {
+            if (_train.IsFormed == true)
+            {
+                Direction = "Не задано";
+                Tickets = 0;
+                _train.RemoveLocomotive();
+                Console.WriteLine("Поезд отправлен");
+            }
+            else
+            {
+                Console.WriteLine("Поезд ещё не сформирован");
+            }
         }
     }
 
-    class Depot //Добавить метод рассаживания пассажиров и расчёта нужного количества вагонов и сборки поезда.
+    class Depot
     {
         private Database _database;
 
@@ -191,61 +252,98 @@ namespace TrainConfigurator
             _database = new Database();
         }
 
-        public Wagon CreateWagonA(int seats, string type)
+        private Wagon CreateWagonA(int seats, string type)
         {
             return new Wagon(seats, type);
         }
 
-        public Wagon CreateWagonB(int seats, string type)
+        private Wagon CreateWagonB(int seats, string type)
         {
             return new Wagon(seats, type);
         }
 
-        public Wagon CreateWagonC(int seats, string type)
+        private Wagon CreateWagonC(int seats, string type)
         {
             return new Wagon(seats, type);
         }
 
-        public Wagon CreateWagonD(int seats, string type)
+        private Wagon CreateWagonD(int seats, string type)
         {
             return new Wagon(seats, type);
         }
 
-        public List<Wagon> CreateWagons() // Получаем лист с вагонами всех типов (для теста)
+        public List<Wagon> CreateWagons(Dictionary<WagonTypes, int> wagonsCount)
         {
-            return new List<Wagon>()
+            List<Wagon> wagons = new List<Wagon>();
+
+            while (wagonsCount[WagonTypes.TypeD] > 0)
             {
-                CreateWagonA(_database.GetWagonSize(WagonTypes.TypeA), _database.GetWagonType(WagonTypes.TypeA)),
-                CreateWagonB(_database.GetWagonSize(WagonTypes.TypeB), _database.GetWagonType(WagonTypes.TypeB)),
-                CreateWagonC(_database.GetWagonSize(WagonTypes.TypeC), _database.GetWagonType(WagonTypes.TypeC)),
-                CreateWagonD(_database.GetWagonSize(WagonTypes.TypeD), _database.GetWagonType(WagonTypes.TypeD)),
-            };
+                wagons.Add(CreateWagonD(_database.GetWagonSize(WagonTypes.TypeD), _database.GetWagonType(WagonTypes.TypeD)));
+                wagonsCount[WagonTypes.TypeD]--;
+            }
+            while (wagonsCount[WagonTypes.TypeC] > 0)
+            {
+                wagons.Add(CreateWagonC(_database.GetWagonSize(WagonTypes.TypeC), _database.GetWagonType(WagonTypes.TypeC)));
+                wagonsCount[WagonTypes.TypeC]--;
+            }
+            while (wagonsCount[WagonTypes.TypeB] > 0)
+            {
+                wagons.Add(CreateWagonB(_database.GetWagonSize(WagonTypes.TypeB), _database.GetWagonType(WagonTypes.TypeB)));
+                wagonsCount[WagonTypes.TypeB]--;
+            }
+            while (wagonsCount[WagonTypes.TypeA] > 0)
+            {
+                wagons.Add(CreateWagonA(_database.GetWagonSize(WagonTypes.TypeA), _database.GetWagonType(WagonTypes.TypeA)));
+                wagonsCount[WagonTypes.TypeA]--;
+            }
+            return wagons;
         }
     }
 
-    public class Train //Чекнуть что тут вообще такое
+    public class Train
     {
-        private List<Wagon> _wagons;
+        private List<Wagon> _locomotive = new List<Wagon>();
+        public bool IsFormed => _locomotive.Count > 0;
 
-        public int Seats => _wagons.Sum(wagon => wagon.Seats); //Вычисляет суммарное количество мест во всех вагонах в листе
+        public int Seats => _locomotive.Sum(wagon => wagon.Seats);
 
-        public Train(List<Wagon> wagons)
+        public void AddWagons(List<Wagon> wagons)
         {
-            _wagons = wagons;
+            if (wagons.Count() > 0)
+            {
+                _locomotive = wagons;
+
+                Console.WriteLine("Поезд сформирован и готов к отправке");
+            }
+            else
+            {
+                Console.WriteLine("Сначала нужно сформировать состав");
+            }
         }
 
-        public void ShowTrain()
+        public void RemoveLocomotive()
         {
-            Console.WriteLine("Состав сформирован следующим образом:");
+            _locomotive.Clear();
+        }
 
-            foreach (Wagon wagon in _wagons)
+        public void ShowTrainInfo()
+        {
+
+            if (_locomotive.Count > 0)
             {
-                _wagon.ShowParameters(wagon);
-                checkTotalPax += wagon.Pax;
+                Console.WriteLine("Состав сформирован следующим образом:");
+
+                foreach (Wagon wagon in _locomotive)
+                {
+                    wagon.ShowWagonInfo();
+                }
+
+                Console.WriteLine($"Всего мест в поезде - {Seats}");
             }
-
-            Console.WriteLine($"Всего пассажиров в поезде - {checkTotalPax}");
-
+            else
+            {
+                Console.WriteLine("Сначала нужно сформировать состав");
+            }
         }
     }
 
@@ -260,6 +358,11 @@ namespace TrainConfigurator
         }
 
         public int Seats { get; }
+
+        public void ShowWagonInfo()
+        {
+            Console.WriteLine($"Тип вагона - {_type}, Количество мест - {Seats}");
+        }
     }
 
     class Database
